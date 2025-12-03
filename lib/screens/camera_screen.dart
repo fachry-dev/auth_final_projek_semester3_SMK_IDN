@@ -1,9 +1,9 @@
+import 'dart:async'; // WAJIB ADA: Untuk Timer jeda otomatis
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:auth_final_proyek/auth/login_screen.dart';
-
+import 'package:auth_final_proyek/home_screen.dart'; 
 
 class FaceAttendanceScreen extends StatefulWidget {
   final CameraDescription camera;
@@ -21,13 +21,14 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
   XFile? imageFile;
   int faceCount = 0;
   bool isBusy = false;
+  bool isRedirecting = false; 
 
   @override
   void initState() {
     super.initState();
     controller = CameraController(
       widget.camera,
-      ResolutionPreset.high, // Resolusi lebih tinggi agar deteksi akurat
+      ResolutionPreset.high,
       enableAudio: false,
     );
     _initializeControllerFuture = controller.initialize();
@@ -39,36 +40,45 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
     super.dispose();
   }
 
-  // Fungsi Reset untuk tombol "Foto Ulang"
   void _resetCamera() {
+    if (isRedirecting) return;
+
     setState(() {
       imageFile = null;
       faceCount = 0;
       isBusy = false;
+      isRedirecting = false;
+    });
+  }
+  void _handleLoginFace() {
+    setState(() {
+      isRedirecting = true; 
+    });
+
+    // 1. Tampilkan notifikasi sukses (SnackBar Hijau)
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Wajah Terkonfirmasi! Mengalihkan ke Home..."),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    // 2. Timer otomatis pindah halaman setelah 1.5 detik
+    Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      
+      Navigator.pushAndRemoveUntil(
+        context, 
+        MaterialPageRoute(builder: (context) => const HomeScreen()), 
+        (route) => false // Menghapus history agar user tidak bisa kembali ke login
+      );
     });
   }
 
-  // Fungsi Logika Absen/Login
-  void _handleAbsen() {
-    if (faceCount > 0) {
-      // TODO: Masukkan logika verifikasi ke backend/firebase di sini
-      // Contoh: Cek apakah wajah ini cocok dengan data user yang sudah register
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Absen Berhasil! Masuk ke aplikasi...")),
-      );
-
-      // Navigasi ke halaman utama setelah login sukses
-      // Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen()));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Wajah tidak terdeteksi, mohon foto ulang.")),
-      );
-    }
-  }
-
   Future<void> _takePictureAndDetect() async {
-    if (isBusy) return;
+    // Cegah ambil foto jika kamera sedang sibuk atau sedang proses redirect
+    if (isBusy || isRedirecting) return;
     
     setState(() {
       isBusy = true;
@@ -78,7 +88,6 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       await _initializeControllerFuture;
       final image = await controller.takePicture();
       
-      // Deteksi wajah langsung setelah foto diambil
       final faces = await _detectFaces(File(image.path));
 
       setState(() {
@@ -87,11 +96,25 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
         isBusy = false;
       });
 
+      // --- LOGIKA UTAMA: JIKA WAJAH DITEMUKAN ---
+      if (faces.isNotEmpty) {
+        // Langsung panggil fungsi login otomatis tanpa menunggu user
+        _handleLoginFace();
+      } else {
+        // Jika wajah tidak ditemukan, beri pesan error
+        ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(
+             content: Text("Wajah tidak terdeteksi. Silakan foto ulang."),
+             backgroundColor: Colors.red,
+           )
+        );
+      }
+
     } catch (e) {
       setState(() {
         isBusy = false;
       });
-      print("Error capturing image: $e");
+      debugPrint("Error capturing image: $e");
     }
   }
 
@@ -120,29 +143,29 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Header
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("cancel", style: TextStyle(color: Colors.blue, fontSize: 16)),
+                  IconButton(
+                    // Matikan tombol back jika sedang loading pindah halaman
+                    onPressed: isRedirecting ? null : () => Navigator.pop(context),
+                    icon: Icon(Icons.arrow_back, color: isRedirecting ? Colors.grey : Colors.black54),
                   ),
                   const Text(
-                    "Face Detection", 
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black54)
+                    "Login Wajah", 
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87)
                   ),
-                  TextButton(
-                    onPressed: () {
-                    },
-                    child: const Text("lanjutkan", style: TextStyle(color: Colors.blue, fontSize: 16)),
-                  ),
+                  const SizedBox(width: 40), 
                 ],
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
+            
+            // Area Kamera
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -154,15 +177,18 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                       alignment: Alignment.bottomCenter,
                       clipBehavior: Clip.none, 
                       children: [
+                        // Bingkai Kamera
                         Container(
                           height: size.width * 0.9,
                           width: double.infinity,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(20),
-                            color: Colors.grey[200], 
+                            color: Colors.grey[200],
+                            // Beri border hijau tebal jika sukses login (Visual feedback)
+                            border: isRedirecting ? Border.all(color: Colors.green, width: 6) : null,
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(15),
                             child: imageFile == null
                                 ? FutureBuilder<void>(
                                     future: _initializeControllerFuture,
@@ -180,97 +206,97 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                                   ),
                           ),
                         ),
-                        if (imageFile == null)
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: CornerPainter(),
-                          ),
-                        ),
+                        
+                        // Tombol Shutter (Hanya muncul jika belum foto)
                         if (imageFile == null)
                         Positioned(
-                          bottom: -25,
+                          bottom: -30,
                           child: GestureDetector(
                             onTap: _takePictureAndDetect,
                             child: Container(
-                              height: 60,
-                              width: 60,
+                              height: 70,
+                              width: 70,
                               decoration: BoxDecoration(
                                 color: Colors.blueAccent,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 4),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 10,
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 15,
                                     spreadRadius: 2,
                                   )
                                 ]
                               ),
                               child: isBusy 
-                                ? const Padding(padding: EdgeInsets.all(15), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                                : const Icon(Icons.camera_alt, color: Colors.white, size: 28),
+                                ? const Padding(padding: EdgeInsets.all(15), child: CircularProgressIndicator(color: Colors.white)) 
+                                : const Icon(Icons.camera_alt, color: Colors.white, size: 32),
                             ),
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 50),
+                    const SizedBox(height: 60),
+                    
+                    // UI STATUS SETELAH FOTO DIAMBIL
                     if (imageFile != null) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF64B5F6), 
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                             BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 5, offset: const Offset(0, 3))
-                          ]
-                        ),
-                        child: Column(
+                      // KONDISI SUKSES (Wajah > 0)
+                      if (faceCount > 0)
+                        Column(
                           children: [
-                            const Text("Wajah Terdeteksi", style: TextStyle(color: Colors.white, fontSize: 12)),
+                            const Icon(Icons.check_circle, color: Colors.green, size: 60),
+                            const SizedBox(height: 10),
                             Text(
-                              "$faceCount", 
-                              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
+                              "Login Berhasil!", 
+                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green[800])
                             ),
+                            const SizedBox(height: 5),
+                            const Text("Mengalihkan ke halaman utama...", style: TextStyle(color: Colors.grey)),
+                            const SizedBox(height: 20),
+                            const LinearProgressIndicator(), // Loading bar visual
                           ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 30),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _resetCamera,
-                              icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
-                              label: const Text("Foto Ulang", style: TextStyle(color: Colors.white)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFFF5252), 
-                                padding: const EdgeInsets.symmetric(vertical: 15),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        )
+                      
+                      // KONDISI GAGAL (Wajah = 0)
+                      else
+                        Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.red[50],
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.red[200]!)
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.warning_amber_rounded, color: Colors.red[700]),
+                                  const SizedBox(width: 8),
+                                  Text("Wajah Tidak Terdeteksi", style: TextStyle(color: Colors.red[700], fontWeight: FontWeight.bold)),
+                                ],
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _handleAbsen,
-                              icon: const Icon(Icons.check_circle_outline, color: Colors.white),
-                              label: const Text("Absen", style: TextStyle(color: Colors.white)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF69F0AE),
-                                padding: const EdgeInsets.symmetric(vertical: 15),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _resetCamera,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text("Coba Lagi"),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.black87,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 15)
+                                ),
                               ),
-                            ),
-                          ),
-                        ],
-                      )
+                            )
+                          ],
+                        )
                     ] else ...[
                       const Text(
-                        "Posisikan wajah Anda di dalam kotak",
+                        "Tap tombol kamera untuk login",
                         style: TextStyle(color: Colors.grey),
                       )
                     ]
@@ -283,39 +309,4 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       ),
     );
   }
-}
-class CornerPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke;
-
-    final double length = 40; 
-
-    final path = Path();
-
-    path.moveTo(20, 20 + length);
-    path.lineTo(20, 20);
-    path.lineTo(20 + length, 20);
-
-    path.moveTo(size.width - 20 - length, 20);
-    path.lineTo(size.width - 20, 20);
-    path.lineTo(size.width - 20, 20 + length);
-
-    path.moveTo(20, size.height - 20 - length);
-    path.lineTo(20, size.height - 20);
-    path.lineTo(20 + length, size.height - 20);
-
-
-    path.moveTo(size.width - 20 - length, size.height - 20);
-    path.lineTo(size.width - 20, size.height - 20);
-    path.lineTo(size.width - 20, size.height - 20 - length);
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

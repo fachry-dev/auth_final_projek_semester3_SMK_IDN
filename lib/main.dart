@@ -1,47 +1,49 @@
+import 'package:auth_final_proyek/screens/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:auth_final_proyek/auth/login_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'firebase_options.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:camera/camera.dart';
+import 'firebase_options.dart';
 
-void main() async{
+// Import Splash Screen yang baru dibuat
+import 'package:auth_final_proyek/screens/splash_screen.dart'; 
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
-);
+  );
 
   await Permission.camera.request();
   final cameras = await availableCameras();
-  final firstCamera = cameras.first;
-  runApp(MyApp(camera: firstCamera,));
+  
+  final firstCamera = cameras.isNotEmpty ? cameras.first : null;
+
+  if (firstCamera == null) {
+    debugPrint("Tidak ada kamera yang ditemukan!");
+  }
+
+  runApp(MyApp(camera: firstCamera!));
 }
 
 class MyApp extends StatelessWidget {
-
   final CameraDescription camera;
-  MyApp({super.key, required this.camera});
+  
+  const MyApp({super.key, required this.camera});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Auth Final Project',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
-      // home: StreamBuilder(
-      //   stream:  FirebaseAuth.instance.authStateChanges(), 
-      //   builder: (context, snapshot) {
-      //     if(snapshot.hasData){
-      //       return HomeScreen();
-      //     } else {
-      //       return  CameraScreen(camera: camera);
-      //     }
-      //   }
-      // ),
+      // --- UBAH BAGIAN INI ---
+      // Ganti home menjadi SplashScreen
+      home: const SplashScreen(), 
     );
   }
 }
